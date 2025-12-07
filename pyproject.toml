@@ -1,5 +1,5 @@
 [project]
-name = "yukarin_esa"
+name = "yukarin_esad"
 version = "0.1.0"
 authors = [
     { name = "Hiroshiba", email = "hihokaruta@gmail.com" }
@@ -74,4 +74,4 @@ packages = ["hiho_pytorch_base"]
 only-packages = true
 
 [tool.hatch.build.targets.wheel.sources]
-"hiho_pytorch_base" = "yukarin_esa"
+"hiho_pytorch_base" = "yukarin_esad"
