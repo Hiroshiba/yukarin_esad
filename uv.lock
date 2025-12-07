@@ -2554,7 +2554,7 @@ wheels = [
 ]
 
 [[package]]
-name = "yukarin-esa"
+name = "yukarin-esad"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
