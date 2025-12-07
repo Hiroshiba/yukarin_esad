@@ -27,8 +27,6 @@ class OutputData:
     phoneme_id: Tensor  # (L,) 音素ID
     phoneme_duration: Tensor  # (L,) 音素継続時間
     phoneme_stress: Tensor  # (L,) 全音素のストレス値（子音=0、母音=1-3）
-    f0: Tensor  # (T,) F0
-    volume: Tensor  # (T,) 音量
     vowel_f0_means: Tensor  # (vL,) 各母音のF0
     vowel_voiced: Tensor  # (vL,) 各母音が有声か
     vowel_index: Tensor  # (vL,) 音素列のなかで母音のインデックス
@@ -173,8 +171,6 @@ def preprocess(d: InputData, is_eval: bool) -> OutputData:
         phoneme_id=torch.from_numpy(phoneme_ids).long(),
         phoneme_duration=torch.from_numpy(phoneme_durations).float(),
         phoneme_stress=torch.from_numpy(phoneme_stress).long(),
-        f0=torch.from_numpy(f0).float(),
-        volume=torch.from_numpy(volume).float(),
         vowel_f0_means=torch.from_numpy(vowel_f0_means).float(),
         vowel_voiced=torch.from_numpy(vowel_voiced).bool(),
         vowel_index=torch.from_numpy(vowel_index).long(),

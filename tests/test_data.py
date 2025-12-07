@@ -66,8 +66,6 @@ def assert_output_data_types(output_data: OutputData) -> None:
     assert isinstance(output_data, OutputData)
     assert output_data.phoneme_id.dtype == torch.long
     assert output_data.phoneme_duration.dtype == torch.float
-    assert output_data.f0.dtype == torch.float
-    assert output_data.volume.dtype == torch.float
     assert output_data.vowel_f0_means.dtype == torch.float
     assert output_data.speaker_id.dtype == torch.long
     assert output_data.vowel_index.dtype == torch.long
@@ -324,5 +322,5 @@ def test_preprocess_frame_rate_mismatch():
 
     output_data = preprocess(input_data, is_eval=True)
 
-    # リサンプリング後、F0とvolumeの長さが合うことを確認
-    assert len(output_data.f0) == len(output_data.volume)
+    # リサンプリング後、母音F0が計算されることを確認
+    assert len(output_data.vowel_f0_means) == 1

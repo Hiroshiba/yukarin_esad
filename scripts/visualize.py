@@ -148,34 +148,33 @@ LABデータパス: {lazy_data.lab_path}
 音声ファイル: {audio_path_str}"""
 
     def _create_data_processing_text(
-        self, output_data: OutputData, phonemes: list[ArpaPhoneme], f0_rate: float
+        self, output_data: OutputData, phonemes: list[ArpaPhoneme]
     ) -> str:
         """データ処理結果の情報テキストを作成"""
         vowel_voiced_count = output_data.vowel_voiced.sum().item()
         total_vowels = len(output_data.vowel_voiced)
-        return f"""F0データ shape: {tuple(output_data.f0.shape)}
-Volumeデータ shape: {tuple(output_data.volume.shape)}
-母音F0重心 shape: {tuple(output_data.vowel_f0_means.shape)}
+        return f"""母音F0重心 shape: {tuple(output_data.vowel_f0_means.shape)}
 音素ストレス shape: {tuple(output_data.phoneme_stress.shape)}
 母音有声情報 shape: {tuple(output_data.vowel_voiced.shape)}
 
 音素数: {len(phonemes)}
 母音数: {total_vowels}
 有声母音数: {vowel_voiced_count}
-話者ID: {output_data.speaker_id.item()}
-サンプリングレート: {f0_rate:.2f} Hz"""
+話者ID: {output_data.speaker_id.item()}"""
 
     def _create_integrated_f0_plot(
         self,
         output_data: OutputData,
+        lazy_data: LazyInputData,
         phonemes: list[ArpaPhoneme],
         f0_rate: float,
         time_start: float,
         time_end: float,
     ) -> Figure:
         """統合F0プロットを作成"""
-        f0_values = output_data.f0.detach().numpy()
-        volume_values = output_data.volume.detach().numpy()
+        input_data = lazy_data.fetch()
+        f0_values = input_data.f0_data.array.flatten()
+        volume_values = input_data.volume_data.array.flatten()
         vowel_f0_means = output_data.vowel_f0_means.detach().numpy()
         stress_values = output_data.phoneme_stress.detach().numpy()
         vowel_voiced = output_data.vowel_voiced.detach().numpy()
@@ -331,7 +330,7 @@ Volumeデータ shape: {tuple(output_data.volume.shape)}
         f0_rate = input_data.f0_data.rate
 
         main_plot = self._create_integrated_f0_plot(
-            output_data, phonemes, f0_rate, time_start, time_end
+            output_data, lazy_data, phonemes, f0_rate, time_start, time_end
         )
 
         return main_plot
@@ -344,7 +343,6 @@ Volumeデータ shape: {tuple(output_data.volume.shape)}
 
         input_data = lazy_data.fetch()
         phonemes = input_data.phonemes
-        f0_rate = input_data.f0_data.rate
 
         # 音素情報
         phoneme_info_list = []
@@ -367,9 +365,7 @@ Volumeデータ shape: {tuple(output_data.volume.shape)}
         speaker_id = f"{output_data.speaker_id.item()}"
 
         file_info = self._get_file_info(index, dataset_type)
-        data_processing_info = self._create_data_processing_text(
-            output_data, phonemes, f0_rate
-        )
+        data_processing_info = self._create_data_processing_text(output_data, phonemes)
         details = f"{file_info}\n\n--- データ処理結果 ---\n{data_processing_info}"
 
         return DataInfo(

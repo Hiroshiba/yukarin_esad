@@ -19,8 +19,6 @@ class BatchOutput:
     phoneme_ids_list: list[Tensor]  # [(L,)]
     phoneme_durations_list: list[Tensor]  # [(L,)]
     phoneme_stress_list: list[Tensor]  # [(L,)]
-    f0_data_list: list[Tensor]  # [(T,)]
-    volume_data_list: list[Tensor]  # [(T,)]
     vowel_f0_means_list: list[Tensor]  # [(vL,)]
     vowel_voiced_list: list[Tensor]  # [(vL,)]
     vowel_index_list: list[Tensor]  # [(vL,)]
@@ -41,12 +39,6 @@ class BatchOutput:
         )
         self.phoneme_stress_list = to_device(
             self.phoneme_stress_list, device, non_blocking=non_blocking
-        )
-        self.f0_data_list = to_device(
-            self.f0_data_list, device, non_blocking=non_blocking
-        )
-        self.volume_data_list = to_device(
-            self.volume_data_list, device, non_blocking=non_blocking
         )
         self.vowel_f0_means_list = to_device(
             self.vowel_f0_means_list, device, non_blocking=non_blocking
@@ -75,8 +67,6 @@ def collate_dataset_output(data_list: list[OutputData]) -> BatchOutput:
         phoneme_ids_list=[d.phoneme_id for d in data_list],
         phoneme_durations_list=[d.phoneme_duration for d in data_list],
         phoneme_stress_list=[d.phoneme_stress for d in data_list],
-        f0_data_list=[d.f0 for d in data_list],
-        volume_data_list=[d.volume for d in data_list],
         vowel_f0_means_list=[d.vowel_f0_means for d in data_list],
         vowel_voiced_list=[d.vowel_voiced for d in data_list],
         vowel_index_list=[d.vowel_index for d in data_list],
