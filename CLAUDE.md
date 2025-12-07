@@ -19,7 +19,7 @@ Conformerエンコーダベースの直接予測方式を採用：
 以下の主要コンポーネントがあります。
 `hiho_pytorch_base`内部のモジュール同士は必ず相対インポートで参照します。
 
-### 設定管理 (`src/hiho_pytorch_base/config.py`)
+### 設定管理 (`hiho_pytorch_base/config.py`)
 ```python
 DataFileConfig:     # ファイルパス設定
 DatasetConfig:      # データセット分割設定
@@ -36,7 +36,7 @@ ProjectConfig:      # プロジェクト情報設定
 - エポックベーススケジューラー対応
 - スナップショット保存・復旧機能
 
-### データ処理 (`src/hiho_pytorch_base/dataset.py`)
+### データ処理 (`hiho_pytorch_base/dataset.py`)
 - 遅延読み込みによるメモリ効率化
 - dataclassベースの型安全なデータ構造
 - train/test/eval/valid の4種類データセット対応
@@ -44,7 +44,7 @@ ProjectConfig:      # プロジェクト情報設定
 - stemベース対応付けで異なるデータタイプを自動関連付け
 - 多話者学習対応（JSON形式の話者マッピング）
 
-### ネットワーク (`src/hiho_pytorch_base/network/predictor.py`)
+### ネットワーク (`hiho_pytorch_base/network/predictor.py`)
 - F0回帰 + vuv分類
 - 固定長・可変長データの統一処理
 - 音素エンベディング後のLinear層4層による特徴変換
@@ -57,7 +57,7 @@ ProjectConfig:      # プロジェクト情報設定
 - **出力処理**: 母音フラグマスクで母音部分のF0のみを抽出
 
 ### 推論・生成
-- `src/hiho_pytorch_base/generator.py`: 推論ジェネレーター
+- `hiho_pytorch_base/generator.py`: 推論ジェネレーター
 - `scripts/generate.py`: 推論実行スクリプト
 
 ### テストシステム
@@ -131,7 +131,7 @@ uv run pyright && uv run ruff check --fix && uv run ruff format
 
 ### ディレクトリ構造の維持
 
-フォーク後も `src/hiho_pytorch_base/` ディレクトリ名はそのまま維持してください。
+フォーク後も `hiho_pytorch_base/` ディレクトリ名はそのまま維持してください。
 ライブラリ内部は相対インポートで実装されているため、ディレクトリ名を変更する必要はありません。
 
 ### 拡張例
@@ -151,9 +151,14 @@ uv run pyright && uv run ruff check --fix && uv run ruff format
 フォーク先で別のパッケージ名（例: `repository_name`）として配布する場合、`pyproject.toml` を以下のように変更します：
 
 ```toml
+[project]
+name = "repository_name"
+
 [tool.hatch.build.targets.wheel.sources]
-"src/hiho_pytorch_base" = "repository_name"
+"hiho_pytorch_base" = "repository_name"
 ```
+
+これら以外の変更は不要です。
 
 ---
 

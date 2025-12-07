@@ -155,5 +155,5 @@ cython_debug/
 .vscode/
 
 # Project specific
-!src/hiho_pytorch_base/
+!hiho_pytorch_base/
 !CLAUDE.md
