@@ -5,7 +5,7 @@ from typing import Self
 
 import torch
 from torch import Tensor, nn
-from torch.nn.functional import binary_cross_entropy_with_logits, l1_loss
+from torch.nn.functional import mse_loss
 
 from .batch import BatchOutput
 from .generator import Generator, GeneratorOutput
@@ -17,19 +17,23 @@ from .utility.train_utility import DataNumProtocol
 class EvaluatorOutput(DataNumProtocol):
     """評価値"""
 
-    loss: Tensor
+    f0_mse_loss: Tensor
     vuv_accuracy: Tensor
+    vuv_precision: Tensor
+    vuv_recall: Tensor
 
     def detach_cpu(self) -> Self:
         """全てのTensorをdetachしてCPUに移動"""
-        self.loss = detach_cpu(self.loss)
+        self.f0_mse_loss = detach_cpu(self.f0_mse_loss)
         self.vuv_accuracy = detach_cpu(self.vuv_accuracy)
+        self.vuv_precision = detach_cpu(self.vuv_precision)
+        self.vuv_recall = detach_cpu(self.vuv_recall)
         return self
 
 
 def calculate_value(output: EvaluatorOutput) -> Tensor:
     """評価値の良し悪しを計算する関数。高いほど良い。"""
-    return -1 * output.loss
+    return -1 * output.f0_mse_loss
 
 
 class Evaluator(nn.Module):
@@ -43,11 +47,14 @@ class Evaluator(nn.Module):
     def forward(self, batch: BatchOutput) -> EvaluatorOutput:
         """データをネットワークに入力して評価値を計算する"""
         output_result: GeneratorOutput = self.generator(
+            noise_f0_list=batch.noise_f0_list,
+            noise_vuv_list=batch.noise_vuv_list,
             phoneme_ids_list=batch.phoneme_ids_list,
             phoneme_durations_list=batch.phoneme_durations_list,
             phoneme_stress_list=batch.phoneme_stress_list,
             vowel_index_list=batch.vowel_index_list,
             speaker_id=batch.speaker_id,
+            step_num=self.generator.config.train.diffusion_step_num,
         )
 
         # 予測結果とターゲットを結合して一括計算
@@ -56,26 +63,26 @@ class Evaluator(nn.Module):
         target_f0_all = torch.cat(batch.vowel_f0_means_list, dim=0)  # (sum(vL),)
         target_vuv_all = torch.cat(batch.vowel_voiced_list, dim=0)  # (sum(vL),)
 
-        # vuv損失（全母音で計算）
-        vuv_loss = binary_cross_entropy_with_logits(
-            pred_vuv_all, target_vuv_all.float()
-        )
-
         # F0損失（有声母音のみで計算）
         voiced_mask = target_vuv_all  # (sum(vL),)
         if voiced_mask.any():
-            f0_loss = l1_loss(pred_f0_all[voiced_mask], target_f0_all[voiced_mask])
+            f0_mse = mse_loss(pred_f0_all[voiced_mask], target_f0_all[voiced_mask])
         else:
-            f0_loss = pred_f0_all.new_tensor(0.0)
-
-        loss = f0_loss + vuv_loss
+            f0_mse = pred_f0_all.new_tensor(0.0)
 
         # 有声かどうかの精度
         pred_vuv_binary = pred_vuv_all > 0.0
+        tp = (pred_vuv_binary & target_vuv_all).float().sum()
+        fp = (pred_vuv_binary & ~target_vuv_all).float().sum()
+        fn = (~pred_vuv_binary & target_vuv_all).float().sum()
+        vuv_precision = tp / (tp + fp)
+        vuv_recall = tp / (tp + fn)
         vuv_accuracy = (pred_vuv_binary == target_vuv_all).float().mean()
 
         return EvaluatorOutput(
-            loss=loss,
+            f0_mse_loss=f0_mse,
             vuv_accuracy=vuv_accuracy,
+            vuv_precision=vuv_precision,
+            vuv_recall=vuv_recall,
             data_num=batch.data_num,
         )

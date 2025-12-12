@@ -54,7 +54,9 @@ class NetworkConfig(_Model):
 class ModelConfig(_Model):
     """モデルの設定"""
 
-    pass
+    adaptive_weighting_p: float
+    adaptive_weighting_eps: float
+    flow_type: Literal["rectified_flow", "meanflow"]
 
 
 class TrainConfig(_Model):
@@ -63,6 +65,7 @@ class TrainConfig(_Model):
     batch_size: int
     gradient_accumulation: int = 1
     eval_batch_size: int
+    diffusion_step_num: int
     log_epoch: int
     eval_epoch: int
     snapshot_epoch: int
@@ -108,7 +111,7 @@ class Config(_Model):
     def validate_config(self) -> None:
         """設定の妥当性を検証"""
         assert self.train.eval_epoch % self.train.log_epoch == 0
-        assert self.dataset.flow_type == self.network.flow_type
+        assert self.dataset.flow_type == self.network.flow_type == self.model.flow_type
 
     def add_git_info(self) -> None:
         """Git情報をプロジェクトタグに追加"""
