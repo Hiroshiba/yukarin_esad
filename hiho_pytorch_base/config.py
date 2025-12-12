@@ -48,6 +48,7 @@ class NetworkConfig(_Model):
     speaker_embedding_size: int
     stress_embedding_size: int
     input_phoneme_duration: bool
+    flow_type: Literal["rectified_flow", "meanflow"]
 
 
 class ModelConfig(_Model):
@@ -107,6 +108,7 @@ class Config(_Model):
     def validate_config(self) -> None:
         """設定の妥当性を検証"""
         assert self.train.eval_epoch % self.train.log_epoch == 0
+        assert self.dataset.flow_type == self.network.flow_type
 
     def add_git_info(self) -> None:
         """Git情報をプロジェクトタグに追加"""

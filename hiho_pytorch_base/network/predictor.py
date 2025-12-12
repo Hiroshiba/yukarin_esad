@@ -9,6 +9,36 @@ from .conformer.encoder import Encoder
 from .transformer.utility import make_non_pad_mask
 
 
+def get_lengths(
+    tensor_list: list[Tensor],  # [(L, ?)]
+) -> Tensor:  # (B,)
+    """テンソルリストからlengthsを取得"""
+    device = tensor_list[0].device
+    lengths = torch.tensor([t.shape[0] for t in tensor_list], device=device)
+    return lengths
+
+
+def pad_tensor_list(
+    tensor_list: list[Tensor],  # [(L, ?)]
+) -> Tensor:  # (B, L, ?)
+    """テンソルリストをパディング"""
+    batch_size = len(tensor_list)
+    if batch_size == 1:
+        # NOTE: ONNX化の際にpad_sequenceがエラーになるため迂回
+        padded = tensor_list[0].unsqueeze(0)
+    else:
+        padded = pad_sequence(tensor_list, batch_first=True)
+    return padded
+
+
+def create_padding_mask(
+    lengths: Tensor,  # (B,)
+) -> Tensor:  # (B, 1, L)
+    """lengthsからパディングマスクを生成"""
+    mask = make_non_pad_mask(lengths).unsqueeze(-2).to(lengths.device)
+    return mask
+
+
 class Predictor(nn.Module):
     """メインのネットワーク"""
 
@@ -57,8 +87,9 @@ class Predictor(nn.Module):
         embedding_size = phoneme_embedding_size + stress_embedding_size
         if input_phoneme_duration:
             embedding_size += hidden_size
+        additional_size = 1 + 1 + 1 + 1  # input_f0, input_vuv, t, h
         self.pre_conformer = nn.Linear(
-            embedding_size + speaker_embedding_size, hidden_size
+            embedding_size + speaker_embedding_size + additional_size, hidden_size
         )
 
         self.encoder = encoder
@@ -70,26 +101,18 @@ class Predictor(nn.Module):
     def forward(  # noqa: D102
         self,
         *,
-        phoneme_ids_list: list[Tensor],  # [(L,)]
-        phoneme_durations_list: list[Tensor],  # [(L,)]
-        phoneme_stress_list: list[Tensor],  # [(L,)]
-        vowel_index_list: list[Tensor],  # [(vL,)]
+        padded_phoneme_ids: Tensor,  # (B, L)
+        padded_phoneme_durations: Tensor,  # (B, L)
+        padded_phoneme_stress: Tensor,  # (B, L)
+        padded_input_f0: Tensor,  # (B, L, 1)
+        padded_input_vuv: Tensor,  # (B, L, 1)
+        mask: Tensor,  # (B, 1, L)
+        t: Tensor,  # (B,)
+        h: Tensor,  # (B,)
         speaker_id: Tensor,  # (B,)
-    ) -> tuple[list[Tensor], list[Tensor]]:  # f0_list [(vL,)], vuv_list [(vL,)]
-        device = speaker_id.device
-        batch_size = len(phoneme_ids_list)
-
-        # シーケンスをパディング
-        phoneme_lengths = torch.tensor(
-            [seq.shape[0] for seq in phoneme_ids_list], device=device
-        )
-        padded_phoneme_ids = pad_sequence(phoneme_ids_list, batch_first=True)  # (B, L)
-        padded_durations = pad_sequence(
-            phoneme_durations_list, batch_first=True
-        )  # (B, L)
-        padded_phoneme_stress = pad_sequence(
-            phoneme_stress_list, batch_first=True
-        )  # (B, L)
+    ) -> tuple[Tensor, Tensor]:  # (B, L, 1), (B, L, 1)
+        batch_size = t.shape[0]
+        max_length = padded_phoneme_ids.size(1)
 
         # 埋め込み
         phoneme_embed = self.phoneme_embedder(padded_phoneme_ids)  # (B, L, ?)
@@ -97,42 +120,95 @@ class Predictor(nn.Module):
 
         # 話者埋め込み
         speaker_embed = self.speaker_embedder(speaker_id)  # (B, ?)
-        max_length = padded_phoneme_ids.size(1)
-        speaker_embed = speaker_embed.unsqueeze(1).expand(
+        speaker_expanded = speaker_embed.unsqueeze(1).expand(
             batch_size, max_length, -1
         )  # (B, L, ?)
 
         # 埋め込みを結合
-        h = torch.cat([phoneme_embed, stress_embed], dim=2)  # (B, L, ?)
+        x = torch.cat([phoneme_embed, stress_embed], dim=2)  # (B, L, ?)
 
         # 継続時間入力（オプション）
         if self.duration_linear is not None:
             duration_embed = self.duration_linear(
-                padded_durations.unsqueeze(-1)
+                padded_phoneme_durations.unsqueeze(-1)
             )  # (B, L, ?)
-            h = torch.cat([h, duration_embed], dim=2)
+            x = torch.cat([x, duration_embed], dim=2)
 
-        # 話者情報を追加
-        h = torch.cat([h, speaker_embed], dim=2)  # (B, L, ?)
+        t_expanded = t.unsqueeze(1).unsqueeze(2).expand(batch_size, max_length, 1)
+        h_expanded = h.unsqueeze(1).unsqueeze(2).expand(batch_size, max_length, 1)
+
+        x = torch.cat(
+            [
+                x,
+                speaker_expanded,
+                padded_input_f0,
+                padded_input_vuv,
+                t_expanded,
+                h_expanded,
+            ],
+            dim=2,
+        )  # (B, L, ?)
 
         # Conformer前の投影
-        h = self.pre_conformer(h)  # (B, L, ?)
-
-        # マスキング
-        mask = make_non_pad_mask(phoneme_lengths).unsqueeze(-2).to(device)  # (B, 1, L)
+        x = self.pre_conformer(x)  # (B, L, ?)
 
         # Conformerエンコーダ
-        h, _ = self.encoder(x=h, cond=None, mask=mask)  # (B, L, ?)
+        x, _ = self.encoder(x=x, cond=None, mask=mask)  # (B, L, ?)
 
         # 出力ヘッド - 全音素に対して予測
-        f0 = self.f0_head(h).squeeze(-1)  # (B, L)
-        vuv = self.vuv_head(h).squeeze(-1)  # (B, L)
+        f0 = self.f0_head(x)  # (B, L, 1)
+        vuv = self.vuv_head(x)  # (B, L, 1)
+
+        return f0, vuv
+
+    def forward_list(  # noqa: D102
+        self,
+        *,
+        phoneme_ids_list: list[Tensor],  # [(L,)]
+        phoneme_durations_list: list[Tensor],  # [(L,)]
+        phoneme_stress_list: list[Tensor],  # [(L,)]
+        input_f0_list: list[Tensor],  # [(L,)]
+        input_vuv_list: list[Tensor],  # [(L,)]
+        vowel_index_list: list[Tensor],  # [(vL,)]
+        t: Tensor,  # (B,)
+        h: Tensor,  # (B,)
+        speaker_id: Tensor,  # (B,)
+    ) -> tuple[list[Tensor], list[Tensor]]:  # [(vL,)], [(vL,)]
+        lengths = get_lengths(phoneme_ids_list)  # (B,)
+        padded_phoneme_ids = pad_tensor_list(phoneme_ids_list)  # (B, L)
+        padded_phoneme_durations = pad_tensor_list(phoneme_durations_list)  # (B, L)
+        padded_phoneme_stress = pad_tensor_list(phoneme_stress_list)  # (B, L)
+        padded_input_f0 = pad_tensor_list([t.unsqueeze(-1) for t in input_f0_list])
+        padded_input_vuv = pad_tensor_list([t.unsqueeze(-1) for t in input_vuv_list])
+        mask = create_padding_mask(lengths)  # (B, 1, L)
+
+        output_f0, output_vuv = self(
+            padded_phoneme_ids=padded_phoneme_ids,
+            padded_phoneme_durations=padded_phoneme_durations,
+            padded_phoneme_stress=padded_phoneme_stress,
+            padded_input_f0=padded_input_f0,
+            padded_input_vuv=padded_input_vuv,
+            mask=mask,
+            t=t,
+            h=h,
+            speaker_id=speaker_id,
+        )  # (B, L, 1), (B, L, 1)
 
         # 母音位置でフィルタ
-        return (
-            [f0[i, vowel_indices] for i, vowel_indices in enumerate(vowel_index_list)],
-            [vuv[i, vowel_indices] for i, vowel_indices in enumerate(vowel_index_list)],
-        )
+        f0_list = [
+            output_f0[i, :length, 0][vowel_index]
+            for i, (length, vowel_index) in enumerate(
+                zip(lengths, vowel_index_list, strict=True)
+            )
+        ]
+        vuv_list = [
+            output_vuv[i, :length, 0][vowel_index]
+            for i, (length, vowel_index) in enumerate(
+                zip(lengths, vowel_index_list, strict=True)
+            )
+        ]
+
+        return f0_list, vuv_list
 
 
 def create_predictor(config: NetworkConfig) -> Predictor:
@@ -145,8 +221,8 @@ def create_predictor(config: NetworkConfig) -> Predictor:
         positional_dropout_rate=config.conformer_dropout_rate,
         attention_head_size=8,
         attention_dropout_rate=config.conformer_dropout_rate,
-        use_macaron_style=True,
-        use_conv_glu_module=True,
+        use_macaron_style=False,
+        use_conv_glu_module=False,
         conv_glu_module_kernel_size=31,
         feed_forward_hidden_size=config.hidden_size * 4,
         feed_forward_kernel_size=3,
