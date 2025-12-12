@@ -1,6 +1,7 @@
 """データ処理モジュール"""
 
 from dataclasses import dataclass
+from typing import Literal, assert_never
 
 import numpy
 import torch
@@ -31,6 +32,14 @@ class OutputData:
     vowel_voiced: Tensor  # (vL,) 各母音が有声か
     vowel_index: Tensor  # (vL,) 音素列のなかで母音のインデックス
     speaker_id: Tensor
+    input_f0: Tensor  # (L,)
+    target_f0: Tensor  # (L,)
+    noise_f0: Tensor  # (L,)
+    input_vuv: Tensor  # (L,)
+    target_vuv: Tensor  # (L,)
+    noise_vuv: Tensor  # (L,)
+    t: Tensor
+    r: Tensor
 
 
 def calculate_vowel_f0_weighted_mean(
@@ -82,8 +91,35 @@ def calculate_vowel_f0_weighted_mean(
     return numpy.array(vowel_f0_means)
 
 
-def preprocess(d: InputData, is_eval: bool) -> OutputData:
+def sigmoid(a: float | numpy.ndarray) -> float | numpy.ndarray:
+    """シグモイド関数"""
+    return 1 / (1 + numpy.exp(-a))
+
+
+def sample_time_meanflow(data_proportion: float) -> tuple[float, float]:
+    """MeanFlow用の時間サンプリング (t, r)"""
+    rng = numpy.random.default_rng()
+    t_sample = float(sigmoid(rng.standard_normal() * 1.0 + (-0.4)))
+    r_sample = float(sigmoid(rng.standard_normal() * 1.0 + (-0.4)))
+
+    t = max(t_sample, r_sample)
+    r = min(t_sample, r_sample)
+
+    if rng.random() < data_proportion:
+        r = t
+
+    return t, r
+
+
+def preprocess(
+    d: InputData,
+    is_eval: bool,
+    flow_type: Literal["rectified_flow", "meanflow"],
+    data_proportion: float,
+) -> OutputData:
     """全ての変換・検証・配列化処理を統合"""
+    rng = numpy.random.default_rng()
+
     # F0とボリュームのデータを取得
     f0 = d.f0_data.array
     volume = d.volume_data.array
@@ -166,6 +202,63 @@ def preprocess(d: InputData, is_eval: bool) -> OutputData:
     # 有声か
     vowel_voiced = vowel_f0_means > 0
 
+    # 全音素分のF0配列を作成（母音位置のみ実際の値、他はnan）
+    phoneme_num = len(d.phonemes)
+    phoneme_f0 = numpy.full(phoneme_num, numpy.nan, dtype=numpy.float64)
+    phoneme_vuv = numpy.full(phoneme_num, numpy.nan, dtype=numpy.float64)
+
+    for vowel_idx, f0_value, voiced_value in zip(
+        vowel_index, vowel_f0_means, vowel_voiced, strict=True
+    ):
+        if voiced_value:
+            phoneme_f0[vowel_idx] = f0_value
+        phoneme_vuv[vowel_idx] = float(voiced_value)
+
+    # Diffusion用の時間サンプリング
+    match flow_type:
+        case "meanflow":
+            if is_eval:
+                t, r = 1.0, 0.0
+            else:
+                t, r = sample_time_meanflow(data_proportion=data_proportion)
+        case "rectified_flow":
+            if is_eval:
+                t, r = 0.0, 0.0
+            else:
+                t = float(sigmoid(rng.standard_normal()))
+                r = 0.0
+        case _:
+            assert_never(flow_type)
+
+    # F0のDiffusion処理
+    target_f0 = phoneme_f0.copy()
+    noise_f0 = rng.standard_normal(phoneme_num)
+
+    match flow_type:
+        case "meanflow":
+            input_f0 = target_f0 + t * (noise_f0 - target_f0)
+        case "rectified_flow":
+            input_f0 = noise_f0 + t * (target_f0 - noise_f0)
+        case _:
+            assert_never(flow_type)
+
+    voiced_mask = (phoneme_vuv == 1) & (~numpy.isnan(target_f0))
+    input_f0 = numpy.where(voiced_mask, input_f0, noise_f0)
+
+    # VUVのDiffusion処理
+    target_vuv = phoneme_vuv.copy()
+    noise_vuv = rng.standard_normal(phoneme_num)
+
+    match flow_type:
+        case "meanflow":
+            input_vuv = target_vuv + t * (noise_vuv - target_vuv)
+        case "rectified_flow":
+            input_vuv = noise_vuv + t * (target_vuv - noise_vuv)
+        case _:
+            assert_never(flow_type)
+
+    input_vuv = numpy.where(numpy.isnan(target_vuv), noise_vuv, input_vuv)
+
     # Tensor変換
     return OutputData(
         phoneme_id=torch.from_numpy(phoneme_ids).long(),
@@ -175,4 +268,12 @@ def preprocess(d: InputData, is_eval: bool) -> OutputData:
         vowel_voiced=torch.from_numpy(vowel_voiced).bool(),
         vowel_index=torch.from_numpy(vowel_index).long(),
         speaker_id=torch.tensor(d.speaker_id).long(),
+        input_f0=torch.from_numpy(input_f0.astype(numpy.float32)).float(),
+        target_f0=torch.from_numpy(target_f0.astype(numpy.float32)).float(),
+        noise_f0=torch.from_numpy(noise_f0.astype(numpy.float32)).float(),
+        input_vuv=torch.from_numpy(input_vuv.astype(numpy.float32)).float(),
+        target_vuv=torch.from_numpy(target_vuv.astype(numpy.float32)).float(),
+        noise_vuv=torch.from_numpy(noise_vuv.astype(numpy.float32)).float(),
+        t=torch.tensor(t, dtype=torch.float32),
+        r=torch.tensor(r, dtype=torch.float32),
     )

@@ -83,6 +83,8 @@ class Dataset(BaseDataset[OutputData]):
             return preprocess(
                 self.datas[i].fetch(),
                 is_eval=self.is_eval,
+                flow_type=self.config.flow_type,
+                data_proportion=self.config.data_proportion,
             )
         except Exception as e:
             raise RuntimeError(
