@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Literal, cast
 
 import pytest
 from upath import UPath
@@ -41,10 +42,24 @@ def data_and_config(base_config_path: Path, output_data_dir: UPath) -> Config:
     return setup_data_and_config(base_config_path, data_dir)
 
 
-@pytest.fixture(scope="session")
-def train_config(data_and_config: Config) -> Config:
+@pytest.fixture(params=["meanflow", "rectified_flow"])
+def flow_type(
+    request: pytest.FixtureRequest,
+) -> Literal["meanflow", "rectified_flow"]:
+    return cast(Literal["meanflow", "rectified_flow"], request.param)
+
+
+@pytest.fixture
+def train_config(
+    data_and_config: Config, flow_type: Literal["meanflow", "rectified_flow"]
+) -> Config:
     """学習テスト用設定"""
-    return data_and_config
+    config = data_and_config.model_copy(deep=True)
+    config.dataset.flow_type = flow_type
+    config.network.flow_type = flow_type
+    config.model.flow_type = flow_type
+    config.validate_config()
+    return config
 
 
 @pytest.fixture(scope="session")

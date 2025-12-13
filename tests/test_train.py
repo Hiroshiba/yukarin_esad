@@ -55,11 +55,12 @@ def test_model_creation(train_config: Config) -> None:
 
 def test_e2e_train(train_config: Config, train_output_dir: UPath) -> None:
     """学習のe2eテスト"""
-    output_dir = train_output_dir / "trained_model"
+    flow_type = train_config.network.flow_type
+    output_dir = train_output_dir / f"trained_model_{flow_type}"
     if output_dir.exists():
         shutil.rmtree(output_dir)
 
-    config_path = train_output_dir / "config.yaml"
+    config_path = train_output_dir / f"config_{flow_type}.yaml"
     with config_path.open("w") as f:
         yaml.dump(train_config.to_dict(), f)
 
@@ -73,13 +74,16 @@ def test_e2e_train(train_config: Config, train_output_dir: UPath) -> None:
     assert len(predictor_files) > 0
 
 
-def test_e2e_generate(train_output_dir: UPath, tmp_path: Path) -> None:
+def test_e2e_generate(
+    train_config: Config, train_output_dir: UPath, tmp_path: Path
+) -> None:
     """生成のe2eテスト"""
-    trained_model_dir = train_output_dir / "trained_model"
+    flow_type = train_config.network.flow_type
+    trained_model_dir = train_output_dir / f"trained_model_{flow_type}"
     if not trained_model_dir.exists():
         pytest.fail("train test not completed yet")
 
-    generate_output_dir = tmp_path / "generate_output"
+    generate_output_dir = tmp_path / f"generate_output_{flow_type}"
 
     generate(
         model_dir=trained_model_dir,
