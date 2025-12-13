@@ -26,7 +26,7 @@ from hiho_pytorch_base.evaluator import (
 )
 from hiho_pytorch_base.generator import Generator
 from hiho_pytorch_base.model import Model, ModelOutput
-from hiho_pytorch_base.network.predictor import Predictor, create_predictor
+from hiho_pytorch_base.network.predictor import create_predictor
 from hiho_pytorch_base.utility.pytorch_utility import (
     init_weights,
     make_optimizer,
@@ -220,7 +220,8 @@ def setup_training_context(
     print("predictor:", predictor)
 
     # model
-    predictor_scripted: Predictor = torch.jit.script(predictor)  # type: ignore
+    predictor_scripted = predictor
+    # predictor_scripted: Predictor = torch.jit.script(predictor)  # type: ignore TODO: 有効化したい
     model = Model(model_config=config.model, predictor=predictor_scripted)
     if config.train.weight_initializer is not None:
         init_weights(model, name=config.train.weight_initializer)
