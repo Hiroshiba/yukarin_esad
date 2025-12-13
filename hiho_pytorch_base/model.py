@@ -145,6 +145,22 @@ class Model(nn.Module):
         lengths = get_lengths(batch.phoneme_ids_list)  # (B,)
         mask = create_padding_mask(lengths)  # (B, 1, L)
 
+        mask_2d = mask.squeeze(1)  # (B, L)
+        vowel_mask_2d = torch.zeros_like(mask_2d, dtype=torch.bool)  # (B, L)
+        for i, vowel_index in enumerate(batch.vowel_index_list):
+            vowel_mask_2d[i, vowel_index] = True
+
+        voiced_mask_2d = torch.zeros_like(mask_2d, dtype=torch.bool)  # (B, L)
+        for i, (vowel_index, vowel_voiced) in enumerate(
+            zip(
+                batch.vowel_index_list,
+                batch.vowel_voiced_list,
+                strict=True,
+            )
+        ):
+            if vowel_voiced.any():
+                voiced_mask_2d[i, vowel_index[vowel_voiced]] = True
+
         padded_phoneme_ids = pad_tensor_list(batch.phoneme_ids_list)  # (B, L)
         padded_phoneme_durations = pad_tensor_list(
             batch.phoneme_durations_list
@@ -169,8 +185,17 @@ class Model(nn.Module):
             [t.unsqueeze(-1) for t in batch.noise_vuv_list]
         )  # (B, L, 1)
 
-        padded_target_f0_v = padded_noise_f0 - padded_target_f0  # (B, L, 1)
-        padded_target_vuv_v = padded_noise_vuv - padded_target_vuv  # (B, L, 1)
+        # NOTE: JVP計算時にターゲットにNaNがあると結果がNaNになるためマスクする
+        padded_target_f0_v = torch.where(
+            voiced_mask_2d.unsqueeze(-1),
+            padded_noise_f0 - padded_target_f0,
+            torch.zeros_like(padded_noise_f0),
+        )  # (B, L, 1)
+        padded_target_vuv_v = torch.where(
+            vowel_mask_2d.unsqueeze(-1),
+            padded_noise_vuv - padded_target_vuv,
+            torch.zeros_like(padded_noise_vuv),
+        )  # (B, L, 1)
 
         def u_func(f0: Tensor, vuv: Tensor, t: Tensor, r: Tensor) -> Tensor:
             """JVP計算用のラッパー関数"""
@@ -216,22 +241,6 @@ class Model(nn.Module):
         padded_target_v = torch.cat([padded_target_f0_v, padded_target_vuv_v], dim=2)
         u_tgt = padded_target_v - h_expanded.unsqueeze(-1) * du_dt  # (B, L, 2)
         mse_per_element = (u_pred - u_tgt.detach()) ** 2  # (B, L, 2)
-
-        mask_2d = mask.squeeze(1)  # (B, L)
-        vowel_mask_2d = torch.zeros_like(mask_2d, dtype=torch.bool)  # (B, L)
-        for i, vowel_index in enumerate(batch.vowel_index_list):
-            vowel_mask_2d[i, vowel_index] = True
-
-        voiced_mask_2d = torch.zeros_like(mask_2d, dtype=torch.bool)  # (B, L)
-        for i, (vowel_index, vowel_voiced) in enumerate(
-            zip(
-                batch.vowel_index_list,
-                batch.vowel_voiced_list,
-                strict=True,
-            )
-        ):
-            if vowel_voiced.any():
-                voiced_mask_2d[i, vowel_index[vowel_voiced]] = True
 
         f0_mask = mask_2d & voiced_mask_2d  # (B, L)
         vuv_mask = mask_2d & vowel_mask_2d  # (B, L)
