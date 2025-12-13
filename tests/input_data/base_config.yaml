@@ -16,9 +16,11 @@ dataset:
   eval_for_test: true
   eval_times_num: 1
   seed: 42
+  flow_type: "meanflow"
+  data_proportion: 0.75
 
 network:
-  phoneme_size: 49
+  phoneme_size: 41
   phoneme_embedding_size: 24
   hidden_size: 32
   conformer_block_num: 4
@@ -27,13 +29,18 @@ network:
   speaker_embedding_size: 8
   stress_embedding_size: 4
   input_phoneme_duration: true
+  flow_type: "meanflow"
 
-model: {}
+model:
+  adaptive_weighting_p: 1.0
+  adaptive_weighting_eps: 0.01
+  flow_type: "meanflow"
 
 train:
   batch_size: 4
   gradient_accumulation: 2
   eval_batch_size: 8
+  diffusion_step_num: 1
   log_epoch: 2
   eval_epoch: 4
   snapshot_epoch: 4
