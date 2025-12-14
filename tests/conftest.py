@@ -46,6 +46,7 @@ def data_and_config(base_config_path: Path, output_data_dir: UPath) -> Config:
 def flow_type(
     request: pytest.FixtureRequest,
 ) -> Literal["meanflow", "rectified_flow"]:
+    """Flowの種類"""
     return cast(Literal["meanflow", "rectified_flow"], request.param)
 
 

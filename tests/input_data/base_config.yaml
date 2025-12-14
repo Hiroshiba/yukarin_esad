@@ -16,6 +16,7 @@ dataset:
   eval_for_test: true
   eval_times_num: 1
   seed: 42
+  statistics_cache_dir: "tests/data/test_data"
   flow_type: "meanflow"
   data_proportion: 0.75
 

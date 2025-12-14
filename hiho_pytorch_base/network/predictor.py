@@ -5,6 +5,7 @@ from torch import Tensor, nn
 from torch.nn.utils.rnn import pad_sequence
 
 from ..config import NetworkConfig
+from ..data.statistics import DataStatistics
 from .conformer.encoder import Encoder
 from .transformer.utility import make_non_pad_mask
 
@@ -52,10 +53,20 @@ class Predictor(nn.Module):
         stress_embedding_size: int,
         input_phoneme_duration: bool,
         encoder: Encoder,
+        statistics: DataStatistics,
     ):
         super().__init__()
 
         self.hidden_size = hidden_size
+        if len(statistics.f0_mean) != speaker_size:
+            raise ValueError(
+                f"statistics speaker_size mismatch: network={speaker_size} statistics={len(statistics.f0_mean)}"
+            )
+
+        self.register_buffer("f0_mean", torch.from_numpy(statistics.f0_mean))
+        self.register_buffer("f0_std", torch.from_numpy(statistics.f0_std))
+        self.register_buffer("vuv_mean", torch.from_numpy(statistics.vuv_mean))
+        self.register_buffer("vuv_std", torch.from_numpy(statistics.vuv_std))
 
         # TODO: 推論時は行列演算を焼き込める。精度的にdoubleにする必要があるかも
         self.phoneme_embedder = nn.Sequential(
@@ -211,7 +222,7 @@ class Predictor(nn.Module):
         return f0_list, vuv_list
 
 
-def create_predictor(config: NetworkConfig) -> Predictor:
+def create_predictor(config: NetworkConfig, *, statistics: DataStatistics) -> Predictor:
     """設定からPredictorを作成"""
     encoder = Encoder(
         hidden_size=config.hidden_size,
@@ -236,4 +247,5 @@ def create_predictor(config: NetworkConfig) -> Predictor:
         stress_embedding_size=config.stress_embedding_size,
         input_phoneme_duration=config.input_phoneme_duration,
         encoder=encoder,
+        statistics=statistics,
     )

@@ -9,6 +9,7 @@ from torch import Tensor
 
 from .phoneme import ArpaPhoneme
 from .sampling_data import ResampleInterpolateKind, SamplingData
+from .statistics import DataStatistics
 
 
 @dataclass
@@ -113,6 +114,8 @@ def sample_time_meanflow(data_proportion: float) -> tuple[float, float]:
 
 def preprocess(
     d: InputData,
+    *,
+    statistics: DataStatistics,
     is_eval: bool,
     flow_type: Literal["rectified_flow", "meanflow"],
     data_proportion: float,
@@ -214,6 +217,17 @@ def preprocess(
             phoneme_f0[vowel_idx] = f0_value
         phoneme_vuv[vowel_idx] = float(voiced_value)
 
+    if d.speaker_id < 0 or d.speaker_id >= len(statistics.f0_mean):
+        raise ValueError(f"話者IDが範囲外です。話者ID: {d.speaker_id})")
+
+    speaker_f0_mean = statistics.f0_mean[d.speaker_id]
+    speaker_f0_std = statistics.f0_std[d.speaker_id]
+    speaker_vuv_mean = statistics.vuv_mean[d.speaker_id]
+    speaker_vuv_std = statistics.vuv_std[d.speaker_id]
+
+    target_f0 = (phoneme_f0 - speaker_f0_mean) / speaker_f0_std
+    target_vuv = (phoneme_vuv - speaker_vuv_mean) / speaker_vuv_std
+
     # Diffusion用の時間サンプリング
     match flow_type:
         case "meanflow":
@@ -231,7 +245,6 @@ def preprocess(
             assert_never(flow_type)
 
     # F0のDiffusion処理
-    target_f0 = phoneme_f0.copy()
     noise_f0 = rng.standard_normal(phoneme_num)
 
     match flow_type:
@@ -246,7 +259,6 @@ def preprocess(
     input_f0 = numpy.where(voiced_mask, input_f0, noise_f0)
 
     # VUVのDiffusion処理
-    target_vuv = phoneme_vuv.copy()
     noise_vuv = rng.standard_normal(phoneme_num)
 
     match flow_type:

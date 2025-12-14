@@ -119,7 +119,10 @@ class VisualizationApp:
     def _create_dataset(self) -> DatasetCollection:
         """データセットを作成"""
         config = Config.from_dict(yaml.safe_load(self.config_path.read_text()))
-        return create_dataset(config.dataset)
+        datasets, _statistics = create_dataset(
+            config.dataset, statistics_workers=config.train.prefetch_workers
+        )
+        return datasets
 
     def _get_dataset_and_data(
         self, index: int, dataset_type: DatasetType
@@ -495,7 +498,9 @@ Diffusion r: {output_data.r.item()}
                 time_start: float,
                 time_end: float,
             ):
-                _, output_data, lazy_data = self._get_dataset_and_data(index, dataset_type)
+                _, output_data, lazy_data = self._get_dataset_and_data(
+                    index, dataset_type
+                )
                 input_data = lazy_data.fetch()
                 phonemes = input_data.phonemes
                 f0_rate = input_data.f0_data.rate
@@ -600,10 +605,16 @@ Diffusion r: {output_data.r.item()}
                     gr.Markdown(diffusion_params)
 
                 with gr.Row():
-                    gr.Plot(value=diffusion_f0_plot, label="Diffusion入力/ターゲット/ノイズ: F0")
+                    gr.Plot(
+                        value=diffusion_f0_plot,
+                        label="Diffusion入力/ターゲット/ノイズ: F0",
+                    )
 
                 with gr.Row():
-                    gr.Plot(value=diffusion_vuv_plot, label="Diffusion入力/ターゲット/ノイズ: VUV")
+                    gr.Plot(
+                        value=diffusion_vuv_plot,
+                        label="Diffusion入力/ターゲット/ノイズ: VUV",
+                    )
 
                 with gr.Row():
                     with gr.Column():

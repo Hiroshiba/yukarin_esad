@@ -66,7 +66,10 @@ def generate(
         config=config, predictor=to_local_path(predictor_path), use_gpu=use_gpu
     )
 
-    dataset = create_dataset(config.dataset).get(dataset_type)
+    datasets, _statistics = create_dataset(
+        config.dataset, statistics_workers=config.train.prefetch_workers
+    )
+    dataset = datasets.get(dataset_type)
     if num_files is not None:
         if num_files > len(dataset):
             raise ValueError(

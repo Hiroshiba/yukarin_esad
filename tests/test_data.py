@@ -14,6 +14,15 @@ from hiho_pytorch_base.data.data import (
 )
 from hiho_pytorch_base.data.phoneme import ArpaPhoneme
 from hiho_pytorch_base.data.sampling_data import SamplingData
+from hiho_pytorch_base.data.statistics import DataStatistics
+
+
+def create_unit_statistics(speaker_id: int) -> DataStatistics:
+    """単位統計情報を作成"""
+    speaker_size = speaker_id + 1
+    zeros = numpy.zeros(speaker_size, dtype=numpy.float64)
+    ones = numpy.ones(speaker_size, dtype=numpy.float64)
+    return DataStatistics(f0_mean=zeros, f0_std=ones, vuv_mean=zeros, vuv_std=ones)
 
 
 def create_arpa_phonemes(
@@ -114,7 +123,11 @@ def test_new_input_data_structure(flow_type: Literal["meanflow", "rectified_flow
     assert input_data.f0_data.rate == input_data.volume_data.rate
 
     output_data = preprocess(
-        input_data, is_eval=True, flow_type=flow_type, data_proportion=0.75
+        input_data,
+        statistics=create_unit_statistics(input_data.speaker_id),
+        is_eval=True,
+        flow_type=flow_type,
+        data_proportion=0.75,
     )
     assert_output_data_types(output_data)
 
@@ -169,7 +182,9 @@ def test_f0_weighted_mean_with_partial_detection():
     numpy.testing.assert_almost_equal(result[0], expected, decimal=1)
 
 
-def test_preprocess_with_stress_phonemes(flow_type: Literal["meanflow", "rectified_flow"]):
+def test_preprocess_with_stress_phonemes(
+    flow_type: Literal["meanflow", "rectified_flow"],
+):
     """ストレス値付き音素のpreprocess動作テスト"""
     input_data = create_basic_input_data(
         phoneme_names=["S", "AA", "T"],
@@ -192,7 +207,11 @@ def test_preprocess_with_stress_phonemes(flow_type: Literal["meanflow", "rectifi
     assert input_data.phonemes[1].stress == 1  # ストレス値確認
 
     output_data = preprocess(
-        input_data, is_eval=True, flow_type=flow_type, data_proportion=0.75
+        input_data,
+        statistics=create_unit_statistics(input_data.speaker_id),
+        is_eval=True,
+        flow_type=flow_type,
+        data_proportion=0.75,
     )
     assert len(output_data.vowel_f0_means) == 1
     assert output_data.vowel_index[0] == 1  # AAの位置
@@ -222,10 +241,18 @@ def test_time_mismatch_error(flow_type: Literal["meanflow", "rectified_flow"]):
     )
 
     with pytest.raises(ValueError, match="LABファイルとフレーム数が一致しません"):
-        preprocess(input_data, is_eval=True, flow_type=flow_type, data_proportion=0.75)
+        preprocess(
+            input_data,
+            statistics=create_unit_statistics(input_data.speaker_id),
+            is_eval=True,
+            flow_type=flow_type,
+            data_proportion=0.75,
+        )
 
 
-def test_preprocess_basic_functionality(flow_type: Literal["meanflow", "rectified_flow"]):
+def test_preprocess_basic_functionality(
+    flow_type: Literal["meanflow", "rectified_flow"],
+):
     """preprocess関数の基本動作テスト（新構造）"""
     durations = [0.02, 0.04, 0.03, 0.05, 0.02]  # 合計0.16秒
     frame_rate = 100.0
@@ -242,7 +269,11 @@ def test_preprocess_basic_functionality(flow_type: Literal["meanflow", "rectifie
     )
 
     output_data = preprocess(
-        input_data, is_eval=True, flow_type=flow_type, data_proportion=0.75
+        input_data,
+        statistics=create_unit_statistics(input_data.speaker_id),
+        is_eval=True,
+        flow_type=flow_type,
+        data_proportion=0.75,
     )
     assert_output_data_types(output_data)
 
@@ -273,10 +304,18 @@ def test_no_vowels_case(flow_type: Literal["meanflow", "rectified_flow"]):
 
     # 母音なしの場合はpreprocessでValueErrorが発生する
     with pytest.raises(ValueError, match="母音インデックスが空です"):
-        preprocess(input_data, is_eval=True, flow_type=flow_type, data_proportion=0.75)
+        preprocess(
+            input_data,
+            statistics=create_unit_statistics(input_data.speaker_id),
+            is_eval=True,
+            flow_type=flow_type,
+            data_proportion=0.75,
+        )
 
 
-def test_multiple_stress_values_processing(flow_type: Literal["meanflow", "rectified_flow"]):
+def test_multiple_stress_values_processing(
+    flow_type: Literal["meanflow", "rectified_flow"],
+):
     """複数の異なるストレス値（0,1,2）のpreprocess処理テスト"""
     input_data = create_basic_input_data(
         phoneme_names=["B", "AA", "T", "EH", "S"],
@@ -306,14 +345,20 @@ def test_multiple_stress_values_processing(flow_type: Literal["meanflow", "recti
 
     # preprocess後も保持されているか確認
     output_data = preprocess(
-        input_data, is_eval=True, flow_type=flow_type, data_proportion=0.75
+        input_data,
+        statistics=create_unit_statistics(input_data.speaker_id),
+        is_eval=True,
+        flow_type=flow_type,
+        data_proportion=0.75,
     )
     # 全音素のストレス値：B=0, AA0=1(0+1), T=0, EH2=3(2+1), S=0 → [0, 1, 0, 3, 0]
     assert torch.equal(output_data.phoneme_stress, torch.tensor([0, 1, 0, 3, 0]))
     assert torch.equal(output_data.vowel_index, torch.tensor([1, 3]))
 
 
-def test_preprocess_frame_rate_mismatch(flow_type: Literal["meanflow", "rectified_flow"]):
+def test_preprocess_frame_rate_mismatch(
+    flow_type: Literal["meanflow", "rectified_flow"],
+):
     """preprocess()で異なるフレームレートの処理テスト"""
     # F0とvolumeで異なるフレームレートを設定
     phonemes = create_arpa_phonemes(
@@ -331,7 +376,11 @@ def test_preprocess_frame_rate_mismatch(flow_type: Literal["meanflow", "rectifie
     )
 
     output_data = preprocess(
-        input_data, is_eval=True, flow_type=flow_type, data_proportion=0.75
+        input_data,
+        statistics=create_unit_statistics(input_data.speaker_id),
+        is_eval=True,
+        flow_type=flow_type,
+        data_proportion=0.75,
     )
 
     # リサンプリング後、母音F0が計算されることを確認

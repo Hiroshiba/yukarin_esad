@@ -9,6 +9,7 @@ import torch
 from torch import Tensor, nn
 
 from .config import Config
+from .data.statistics import DataStatistics
 from .network.predictor import (
     Predictor,
     create_padding_mask,
@@ -57,9 +58,34 @@ class Generator(nn.Module):
 
         if isinstance(predictor, Path):
             state_dict = torch.load(predictor, map_location=self.device)
-            predictor = create_predictor(config.network)
+            statistics = DataStatistics(
+                f0_mean=state_dict["f0_mean"].cpu().numpy(),
+                f0_std=state_dict["f0_std"].cpu().numpy(),
+                vuv_mean=state_dict["vuv_mean"].cpu().numpy(),
+                vuv_std=state_dict["vuv_std"].cpu().numpy(),
+            )
+            predictor = create_predictor(config.network, statistics=statistics)
             predictor.load_state_dict(state_dict)
         self.predictor = predictor.eval().to(self.device)
+
+    def _denorm(
+        self,
+        f0_list: list[Tensor],  # [(vL,)]
+        vuv_list: list[Tensor],  # [(vL,)]
+        speaker_id: Tensor,  # (B,)
+    ) -> GeneratorOutput:
+        speaker_id = speaker_id.to(self.device).long()
+        speaker_f0_mean = self.predictor.f0_mean[speaker_id]  # type: ignore
+        speaker_f0_std = self.predictor.f0_std[speaker_id]  # type: ignore
+        speaker_vuv_mean = self.predictor.vuv_mean[speaker_id]  # type: ignore
+        speaker_vuv_std = self.predictor.vuv_std[speaker_id]  # type: ignore
+
+        out_f0_list: list[Tensor] = []
+        out_vuv_list: list[Tensor] = []
+        for i, (f0, vuv) in enumerate(zip(f0_list, vuv_list, strict=True)):
+            out_f0_list.append(f0 * speaker_f0_std[i] + speaker_f0_mean[i])
+            out_vuv_list.append(vuv * speaker_vuv_std[i] + speaker_vuv_mean[i])
+        return GeneratorOutput(f0=out_f0_list, vuv=out_vuv_list)
 
     @torch.no_grad()
     def forward(
@@ -199,7 +225,7 @@ class Generator(nn.Module):
             for vuv, vowel_index in zip(vuv_list, vowel_index_list, strict=True)
         ]
 
-        return GeneratorOutput(f0=output_f0_list, vuv=output_vuv_list)
+        return self._denorm(output_f0_list, output_vuv_list, speaker_id)
 
     def _generate_meanflow(
         self,
@@ -262,7 +288,7 @@ class Generator(nn.Module):
                 for vuv, vowel_index in zip(vuv_list, vowel_index_list, strict=True)
             ]
 
-            return GeneratorOutput(f0=output_f0_list, vuv=output_vuv_list)
+            return self._denorm(output_f0_list, output_vuv_list, speaker_id)
         else:
             f0_list = [noise_f0.clone() for noise_f0 in noise_f0_list]
             vuv_list = [noise_vuv.clone() for noise_vuv in noise_vuv_list]
@@ -316,4 +342,4 @@ class Generator(nn.Module):
                 for vuv, vowel_index in zip(vuv_list, vowel_index_list, strict=True)
             ]
 
-            return GeneratorOutput(f0=output_f0_list, vuv=output_vuv_list)
+            return self._denorm(output_f0_list, output_vuv_list, speaker_id)
