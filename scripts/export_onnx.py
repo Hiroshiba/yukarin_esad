@@ -1,5 +1,7 @@
 """学習済みモデルをONNX形式にエクスポートする"""
 
+# TODO: 変更前なので動作しない
+
 import argparse
 from pathlib import Path
 

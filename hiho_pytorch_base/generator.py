@@ -103,15 +103,11 @@ class Generator(nn.Module):
         """生成経路で推論する"""
         # TODO: 合っていそうか確認する
 
-        def _convert(
-            data: TensorLike,
-        ) -> Tensor:
+        def _convert(data: TensorLike) -> Tensor:
             return to_tensor(data, self.device)
 
-        noise_f0_list_tensor = [to_tensor(item, self.device) for item in noise_f0_list]
-        noise_vuv_list_tensor = [
-            to_tensor(item, self.device) for item in noise_vuv_list
-        ]
+        noise_f0_list_tensor = [_convert(item) for item in noise_f0_list]
+        noise_vuv_list_tensor = [_convert(item) for item in noise_vuv_list]
         speaker_id_tensor = _convert(speaker_id)
 
         if self.config.model.flow_type == "rectified_flow":

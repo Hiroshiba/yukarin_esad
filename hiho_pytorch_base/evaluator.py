@@ -76,7 +76,7 @@ class Evaluator(nn.Module):
         fp = (pred_vuv_binary & ~target_vuv_all).float().sum()
         fn = (~pred_vuv_binary & target_vuv_all).float().sum()
         vuv_precision = tp / (tp + fp) if (tp + fp) > 0 else pred_f0_all.new_tensor(0.0)
-        vuv_recall = tp / (tp + fn)
+        vuv_recall = tp / (tp + fn) if (tp + fn) > 0 else pred_f0_all.new_tensor(0.0)
         vuv_accuracy = (pred_vuv_binary == target_vuv_all).float().mean()
 
         return EvaluatorOutput(

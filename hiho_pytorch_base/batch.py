@@ -1,7 +1,5 @@
 """バッチ処理モジュール"""
 
-# TODO: まだかなり途中
-
 from dataclasses import dataclass
 from typing import Self
 

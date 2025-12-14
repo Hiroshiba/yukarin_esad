@@ -217,8 +217,9 @@ def preprocess(
             phoneme_f0[vowel_idx] = f0_value
         phoneme_vuv[vowel_idx] = float(voiced_value)
 
+    # 正規化
     if d.speaker_id < 0 or d.speaker_id >= len(statistics.f0_mean):
-        raise ValueError(f"話者IDが範囲外です。話者ID: {d.speaker_id})")
+        raise ValueError(f"話者IDが範囲外です。話者ID: {d.speaker_id}")
 
     speaker_f0_mean = statistics.f0_mean[d.speaker_id]
     speaker_f0_std = statistics.f0_std[d.speaker_id]
@@ -244,31 +245,21 @@ def preprocess(
         case _:
             assert_never(flow_type)
 
-    # F0のDiffusion処理
+    # Diffusion処理
     noise_f0 = rng.standard_normal(phoneme_num)
-
-    match flow_type:
-        case "meanflow":
-            input_f0 = target_f0 + t * (noise_f0 - target_f0)
-        case "rectified_flow":
-            input_f0 = noise_f0 + t * (target_f0 - noise_f0)
-        case _:
-            assert_never(flow_type)
-
-    voiced_mask = (phoneme_vuv == 1) & (~numpy.isnan(target_f0))
-    input_f0 = numpy.where(voiced_mask, input_f0, noise_f0)
-
-    # VUVのDiffusion処理
     noise_vuv = rng.standard_normal(phoneme_num)
 
     match flow_type:
         case "meanflow":
+            input_f0 = target_f0 + t * (noise_f0 - target_f0)
             input_vuv = target_vuv + t * (noise_vuv - target_vuv)
         case "rectified_flow":
+            input_f0 = noise_f0 + t * (target_f0 - noise_f0)
             input_vuv = noise_vuv + t * (target_vuv - noise_vuv)
         case _:
             assert_never(flow_type)
 
+    input_f0 = numpy.where(numpy.isnan(target_f0), noise_f0, input_f0)
     input_vuv = numpy.where(numpy.isnan(target_vuv), noise_vuv, input_vuv)
 
     # Tensor変換
