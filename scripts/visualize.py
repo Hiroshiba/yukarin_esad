@@ -47,6 +47,8 @@ class FigureState:
     """図の状態"""
 
     main_plot_fig: Figure | None = None
+    diffusion_f0_fig: Figure | None = None
+    diffusion_vuv_fig: Figure | None = None
 
 
 def get_audio_path_from_lab(lab_file_path: UPath) -> UPath:
@@ -128,11 +130,8 @@ class VisualizationApp:
         lazy_data = dataset.datas[index]
         return dataset, output_data, lazy_data
 
-    def _get_file_info(self, index: int, dataset_type: DatasetType) -> str:
+    def _get_file_info(self, lazy_data: LazyInputData) -> str:
         """ファイル関連の情報テキストを取得"""
-        dataset = self.dataset_collection.get(dataset_type)
-        lazy_data = dataset.datas[index]
-
         try:
             audio_path = get_audio_path_from_lab(lazy_data.lab_path)
             audio_path_str = str(audio_path)
@@ -156,6 +155,8 @@ LABデータパス: {lazy_data.lab_path}
         return f"""母音F0重心 shape: {tuple(output_data.vowel_f0_means.shape)}
 音素ストレス shape: {tuple(output_data.phoneme_stress.shape)}
 母音有声情報 shape: {tuple(output_data.vowel_voiced.shape)}
+Diffusion t: {output_data.t.item()}
+Diffusion r: {output_data.r.item()}
 
 音素数: {len(phonemes)}
 母音数: {total_vowels}
@@ -313,37 +314,111 @@ LABデータパス: {lazy_data.lab_path}
         plt.tight_layout()
         return self.figure_state.main_plot_fig
 
-    def _create_plots(
-        self,
-        index: int,
-        dataset_type: DatasetType,
-        time_start: float = 0,
-        time_end: float = 2,
+    def _create_diffusion_f0_plot(
+        self, output_data: OutputData, phonemes: list[ArpaPhoneme]
     ) -> Figure:
-        """プロットを作成"""
-        dataset, output_data, lazy_data = self._get_dataset_and_data(
-            index, dataset_type
+        """Diffusion用F0プロットを作成"""
+        input_f0 = output_data.input_f0.detach().cpu().numpy()
+        target_f0 = output_data.target_f0.detach().cpu().numpy()
+        noise_f0 = output_data.noise_f0.detach().cpu().numpy()
+
+        labels = [p.phoneme for p in phonemes]
+        x = np.arange(len(labels))
+
+        fig_width = min(max(24.0, len(labels) * 0.8), 80.0)
+        self.figure_state.diffusion_f0_fig, ax = plt.subplots(
+            1, 1, figsize=(fig_width, 5)
         )
 
-        input_data = lazy_data.fetch()
-        phonemes = input_data.phonemes
-        f0_rate = input_data.f0_data.rate
+        ax.plot(x, input_f0, "b-", linewidth=2, label="input")
+        ax.plot(x, noise_f0, "g--", linewidth=2, label="noise")
 
+        mask = np.isfinite(target_f0)
+        ax.plot(
+            x[mask],
+            target_f0[mask],
+            "r+",
+            markersize=10,
+            markeredgewidth=2,
+            linestyle="None",
+            label="target",
+        )
+
+        ax.set_xlabel("音素", fontsize=16)
+        ax.set_ylabel("F0 (Hz)", fontsize=16)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=0, fontsize=14)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=14, loc="upper right")
+
+        plt.tight_layout()
+        return self.figure_state.diffusion_f0_fig
+
+    def _create_diffusion_vuv_plot(
+        self, output_data: OutputData, phonemes: list[ArpaPhoneme]
+    ) -> Figure:
+        """Diffusion用VUVプロットを作成"""
+        input_vuv = output_data.input_vuv.detach().cpu().numpy()
+        target_vuv = output_data.target_vuv.detach().cpu().numpy()
+        noise_vuv = output_data.noise_vuv.detach().cpu().numpy()
+
+        labels = [p.phoneme for p in phonemes]
+        x = np.arange(len(labels))
+
+        fig_width = min(max(24.0, len(labels) * 0.8), 80.0)
+        self.figure_state.diffusion_vuv_fig, ax = plt.subplots(
+            1, 1, figsize=(fig_width, 4)
+        )
+
+        ax.plot(x, input_vuv, "b-", linewidth=2, label="input")
+        ax.plot(x, noise_vuv, "g--", linewidth=2, label="noise")
+
+        mask = np.isfinite(target_vuv)
+        ax.plot(
+            x[mask],
+            target_vuv[mask],
+            "ro",
+            markersize=6,
+            linestyle="None",
+            label="target",
+        )
+
+        ax.set_xlabel("音素", fontsize=16)
+        ax.set_ylabel("VUV", fontsize=16)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=0, fontsize=14)
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=14, loc="upper right")
+
+        plt.tight_layout()
+        return self.figure_state.diffusion_vuv_fig
+
+    def _create_plots(
+        self,
+        output_data: OutputData,
+        lazy_data: LazyInputData,
+        phonemes: list[ArpaPhoneme],
+        f0_rate: float,
+        time_start: float = 0,
+        time_end: float = 2,
+    ) -> tuple[Figure, Figure, Figure]:
+        """プロットを作成"""
         main_plot = self._create_integrated_f0_plot(
             output_data, lazy_data, phonemes, f0_rate, time_start, time_end
         )
 
-        return main_plot
+        diffusion_f0_plot = self._create_diffusion_f0_plot(output_data, phonemes)
+        diffusion_vuv_plot = self._create_diffusion_vuv_plot(output_data, phonemes)
 
-    def _get_data_info(self, index: int, dataset_type: DatasetType) -> DataInfo:
+        return main_plot, diffusion_f0_plot, diffusion_vuv_plot
+
+    def _get_data_info(
+        self,
+        output_data: OutputData,
+        lazy_data: LazyInputData,
+        phonemes: list[ArpaPhoneme],
+    ) -> DataInfo:
         """データ情報を取得"""
-        dataset, output_data, lazy_data = self._get_dataset_and_data(
-            index, dataset_type
-        )
-
-        input_data = lazy_data.fetch()
-        phonemes = input_data.phonemes
-
         # 音素情報
         phoneme_info_list = []
         for p in phonemes:
@@ -364,7 +439,7 @@ LABデータパス: {lazy_data.lab_path}
 
         speaker_id = f"{output_data.speaker_id.item()}"
 
-        file_info = self._get_file_info(index, dataset_type)
+        file_info = self._get_file_info(lazy_data)
         data_processing_info = self._create_data_processing_text(output_data, phonemes)
         details = f"{file_info}\n\n--- データ処理結果 ---\n{data_processing_info}"
 
@@ -420,15 +495,29 @@ LABデータパス: {lazy_data.lab_path}
                 time_start: float,
                 time_end: float,
             ):
+                _, output_data, lazy_data = self._get_dataset_and_data(index, dataset_type)
+                input_data = lazy_data.fetch()
+                phonemes = input_data.phonemes
+                f0_rate = input_data.f0_data.rate
+
                 # プロットとデータ情報を取得
-                main_plot = self._create_plots(
-                    index, dataset_type, time_start, time_end
+                (
+                    main_plot,
+                    diffusion_f0_plot,
+                    diffusion_vuv_plot,
+                ) = self._create_plots(
+                    output_data,
+                    lazy_data,
+                    phonemes,
+                    f0_rate,
+                    time_start,
+                    time_end,
                 )
-                data_info = self._get_data_info(index, dataset_type)
+                data_info = self._get_data_info(output_data, lazy_data, phonemes)
+                diffusion_params = f"Diffusion: t={float(output_data.t.item()):.4f} r={float(output_data.r.item()):.4f}"
 
                 # 音声取得を試みる
                 try:
-                    _, _, lazy_data = self._get_dataset_and_data(index, dataset_type)
                     audio_path = get_audio_path_from_lab(lazy_data.lab_path)
                     if audio_path:
                         audio_for_gradio = extract_audio_segment(
@@ -506,6 +595,15 @@ LABデータパス: {lazy_data.lab_path}
 
                 with gr.Row():
                     gr.Plot(value=main_plot, label="F0・Volume・音素統合可視化")
+
+                with gr.Row():
+                    gr.Markdown(diffusion_params)
+
+                with gr.Row():
+                    gr.Plot(value=diffusion_f0_plot, label="Diffusion入力/ターゲット/ノイズ: F0")
+
+                with gr.Row():
+                    gr.Plot(value=diffusion_vuv_plot, label="Diffusion入力/ターゲット/ノイズ: VUV")
 
                 with gr.Row():
                     with gr.Column():
