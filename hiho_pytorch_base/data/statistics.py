@@ -194,9 +194,11 @@ def get_or_calc_statistics(
     statistics_path = cache_dir / "statistics.json"
 
     if statistics_path.exists():
+        print(f"統計情報をキャッシュから読み込みました: {statistics_path}")
         statistics_dict = json.loads(statistics_path.read_text())
         return DataStatistics.from_dict(statistics_dict)
 
+    print(f"統計情報を計算しています... (データ数: {len(datas)})")
     statistics = _calc_statistics(datas, workers=workers)
 
     cache_dir.mkdir(parents=True, exist_ok=True)
