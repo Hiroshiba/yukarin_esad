@@ -176,6 +176,14 @@ def _calc_statistics(
             vuv_mean[speaker_id] = mean
             vuv_std[speaker_id] = numpy.sqrt(var)
 
+    # NOTE: vuv_std が 0 の話者は他話者の中央値でフォールバックする
+    valid_vuv_std = numpy.isfinite(vuv_std) & (vuv_std > 0.0)
+    zero_vuv_std = vuv_std == 0.0
+    if numpy.any(zero_vuv_std):
+        print("vuv_std が 0 の話者が存在するため、他話者の中央値でフォールバックします")
+        vuv_mean[zero_vuv_std] = numpy.median(vuv_mean[valid_vuv_std])
+        vuv_std[zero_vuv_std] = numpy.median(vuv_std[valid_vuv_std])
+
     return DataStatistics(
         f0_mean=f0_mean, f0_std=f0_std, vuv_mean=vuv_mean, vuv_std=vuv_std
     )
