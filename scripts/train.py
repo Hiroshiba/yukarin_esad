@@ -384,7 +384,7 @@ def save_predictor(
     context.save_manager.save(value=evaluation_value, step=context.epoch)
 
 
-def save_checkpoint(context: TrainingContext) -> None:
+def save_snapshot(context: TrainingContext) -> None:
     """チェックポイント保存する"""
     torch.save(
         {
@@ -439,18 +439,21 @@ def training_loop(context: TrainingContext) -> None:
             context.logger.log(summary=summary, step=context.epoch)
 
         if should_snapshot_epoch(context):
-            save_checkpoint(context)
+            save_snapshot(context)
 
 
 def train(config_yaml_path: UPath, output_dir: Path) -> None:
     """機械学習モデルを学習する。スナップショットがあれば再開する。"""
     context = setup_training_context(config_yaml_path, output_dir)
 
-    if context.snapshot_path.exists():
-        load_snapshot(context)
-
     output_dir.mkdir(exist_ok=True, parents=True)
     (output_dir / "config.yaml").write_text(yaml.safe_dump(context.config.to_dict()))
+
+    if context.snapshot_path.exists():
+        load_snapshot(context)
+    else:
+        # NOTE: W&BのIDを固定するために保存
+        save_snapshot(context)
 
     try:
         training_loop(context)
