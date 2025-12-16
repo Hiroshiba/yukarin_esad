@@ -48,8 +48,8 @@ train:
     name: "RAdamScheduleFree"
     lr: 0.003
   scheduler: null
-  prefetch_workers: 256
-  preprocess_workers: null
+  prefetch_workers: 4 # NOTE: 本番では256が推奨
+  preprocess_workers: 0 # NOTE: 本番ではnullが推奨
   use_gpu: false
   use_amp: false
 

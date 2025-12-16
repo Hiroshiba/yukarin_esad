@@ -1,6 +1,7 @@
 """データセットモジュール"""
 
 import random
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
@@ -53,10 +54,10 @@ def prefetch_datas(
     train_indices: list[int],
     train_batch_size: int,
     num_prefetch: int,
-) -> None:
-    """データセットを学習順序に従って前もって読み込む"""
+) -> Callable[[], None]:
+    """データセットを学習順序に従って非同期で読み込み、停止関数を返す"""
     if num_prefetch <= 0:
-        return
+        return lambda: None
 
     prefetch_order: list[LazyInputData] = []
     prefetch_order += [train_datas[i] for i in train_indices[:train_batch_size]]
@@ -65,9 +66,14 @@ def prefetch_datas(
     if valid_datas is not None:
         prefetch_order += valid_datas
 
-    with ThreadPoolExecutor(max_workers=num_prefetch) as executor:
-        for data in prefetch_order:
-            executor.submit(data.fetch)
+    executor = ThreadPoolExecutor(max_workers=num_prefetch)
+    for data in prefetch_order:
+        executor.submit(data.fetch)
+
+    def close() -> None:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    return close
 
 
 class Dataset(BaseDataset[OutputData]):

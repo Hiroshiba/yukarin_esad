@@ -2,10 +2,8 @@
 
 import argparse
 import os
-import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
-from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +96,7 @@ class TrainingContext:
     epoch: int
     iteration: int
     snapshot_path: Path
+    close_prefetch: Callable[[], None]
 
 
 class FirstEpochOrderedSampler(Sampler[int]):
@@ -170,18 +169,14 @@ def setup_training_context(
 
     # prefetch
     train_indices = torch.randperm(len(datasets.train)).tolist()
-    threading.Thread(
-        target=partial(
-            prefetch_datas,
-            train_datas=datasets.train.datas,
-            test_datas=datasets.test.datas,
-            valid_datas=datasets.valid.datas if datasets.valid is not None else None,
-            train_indices=train_indices,
-            train_batch_size=config.train.batch_size,
-            num_prefetch=config.train.prefetch_workers,
-        ),
-        daemon=True,
-    ).start()
+    close_prefetch = prefetch_datas(
+        train_datas=datasets.train.datas,
+        test_datas=datasets.test.datas,
+        valid_datas=datasets.valid.datas if datasets.valid is not None else None,
+        train_indices=train_indices,
+        train_batch_size=config.train.batch_size,
+        num_prefetch=config.train.prefetch_workers,
+    )
 
     # data loader
     train_loader = create_data_loader(
@@ -262,6 +257,7 @@ def setup_training_context(
 
     return TrainingContext(
         config=config,
+        close_prefetch=close_prefetch,
         train_loader=train_loader,
         test_loader=test_loader,
         eval_loader=eval_loader,
@@ -458,6 +454,7 @@ def train(config_yaml_path: UPath, output_dir: Path) -> None:
     try:
         training_loop(context)
     finally:
+        context.close_prefetch()
         context.logger.close()
 
 
