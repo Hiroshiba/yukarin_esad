@@ -66,23 +66,24 @@ class Logger:
         project_name: str,
         output_dir: Path,
     ):
+        import wandb.util
+
         self.config_dict = config_dict
         self.project_category = project_category
         self.project_name = project_name
         self.output_dir = output_dir
 
-        self.wandb_id = None
+        self.wandb_id = wandb.util.generate_id()
 
         self.wandb = None
         self.tensorboard = None
 
     def _initialize(self):
-        import wandb
-        import wandb.util
-        from torch.utils.tensorboard import SummaryWriter
+        if self.wandb is not None:
+            return
 
-        if self.wandb_id is None:
-            self.wandb_id = wandb.util.generate_id()
+        import wandb
+        from torch.utils.tensorboard import SummaryWriter
 
         self.wandb = wandb.init(
             id=self.wandb_id,
